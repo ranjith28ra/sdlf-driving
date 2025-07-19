@@ -1,42 +1,29 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8">
-  <title>Vehicle Tracking Map</title>
+  <meta charset="utf-8" />
+  <title>Road Route Map with Distance</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link
-    rel="stylesheet"
-    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-  />
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.css" />
+
   <style>
-    body, html {
+    html, body, #map {
+      height: 100%;
       margin: 0;
-      padding: 0;
-      font-family: 'Segoe UI', sans-serif;
-    }
-    #map {
-      height: 100vh;
-      width: 100%;
+      font-family: Arial, sans-serif;
     }
     .info-box {
       position: absolute;
-      top: 10px;
-      left: 10px;
-      background: rgba(255, 255, 255, 0.95);
+      top: 15px;
+      left: 15px;
+      background: rgba(255, 255, 255, 0.9);
       padding: 15px;
       border-radius: 10px;
-      box-shadow: 0 0 10px rgba(0,0,0,0.2);
+      box-shadow: 0 0 8px rgba(0, 0, 0, 0.2);
       z-index: 1000;
-      max-width: 300px;
-      font-size: 14px;
-    }
-    .info-box h4 {
-      margin: 0 0 10px;
-      font-size: 16px;
-      border-bottom: 1px solid #ccc;
-    }
-    .info-box p {
-      margin: 5px 0;
     }
   </style>
 </head>
@@ -44,77 +31,80 @@
 
 <div id="map"></div>
 <div class="info-box" id="info">
-  <h4>Vehicle Navigation</h4>
-  <p><strong>Current:</strong> <span id="currentLatLng">Loading...</span></p>
-  <p><strong>Destination:</strong> <span id="destLatLng">Not set</span></p>
-  <p><strong>Distance:</strong> <span id="distance">0 cm</span></p>
+  <b>Vehicle Current Location:</b> <span id="current"></span><br>
+  <b>Destination:</b> <span id="dest"></span><br>
+  <b>Distance:</b> <span id="distance"></span>
 </div>
 
+<!-- JS Libraries -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://unpkg.com/leaflet.gridlayer.googlemutant/Leaflet.GoogleMutant.js"></script>
+<script src="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.min.js"></script>
 
 <script>
-  let map = L.map('map').setView([0, 0], 17);
+  let map = L.map('map').setView([11.0168, 76.9558], 15); // default
 
-  // Google Satellite view via plugin
-  L.gridLayer.googleMutant({
-    type: 'satellite' // roadmap | terrain | satellite | hybrid
+  // Satellite tiles
+  L.tileLayer('https://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}', {
+    subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+    maxZoom: 20,
   }).addTo(map);
 
   let currentLatLng = null;
-  let currentMarker = null;
-  let destMarker = null;
+  let routingControl = null;
 
-  function updateInfo(current, dest, distance) {
-    document.getElementById("currentLatLng").innerText = current ? `${current.lat.toFixed(6)}, ${current.lng.toFixed(6)}` : 'Waiting...';
-    document.getElementById("destLatLng").innerText = dest ? `${dest.lat.toFixed(6)}, ${dest.lng.toFixed(6)}` : 'Not set';
-    document.getElementById("distance").innerText = `${distance} cm`;
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(position => {
+      const lat = position.coords.latitude;
+      const lng = position.coords.longitude;
+      currentLatLng = L.latLng(lat, lng);
+
+      map.setView(currentLatLng, 17);
+      L.marker(currentLatLng).addTo(map).bindPopup("Vehicle Location").openPopup();
+      document.getElementById("current").textContent = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+    }, () => {
+      alert("Geolocation access denied.");
+    });
+  } else {
+    alert("Geolocation not supported.");
   }
 
-  function getDistanceInCm(lat1, lon1, lat2, lon2) {
-    const R = 6371000; // meters
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a =
-      Math.sin(dLat / 2) ** 2 +
-      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-      Math.sin(dLon / 2) ** 2;
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    const distanceMeters = R * c;
-    return (distanceMeters * 100).toFixed(2); // to cm
-  }
+  map.on('click', function(e) {
+    if (!currentLatLng) {
+      alert("Waiting for current location...");
+      return;
+    }
 
-  // Get current GPS location
-  navigator.geolocation.getCurrentPosition((pos) => {
-    currentLatLng = {
-      lat: pos.coords.latitude,
-      lng: pos.coords.longitude
-    };
-    map.setView(currentLatLng, 18);
-    currentMarker = L.marker(currentLatLng).addTo(map)
-      .bindPopup("Vehicle Location").openPopup();
+    const destLatLng = e.latlng;
+    document.getElementById("dest").textContent = `${destLatLng.lat.toFixed(5)}, ${destLatLng.lng.toFixed(5)}`;
 
-    updateInfo(currentLatLng, null, 0);
-  }, () => {
-    alert("Location permission denied.");
-  });
+    if (routingControl) {
+      map.removeControl(routingControl);
+    }
 
-  // Tap to set destination
-  map.on("click", (e) => {
-    if (!currentLatLng) return;
+    routingControl = L.Routing.control({
+      waypoints: [
+        currentLatLng,
+        destLatLng
+      ],
+      routeWhileDragging: false,
+      draggableWaypoints: false,
+      showAlternatives: false,
+      addWaypoints: false,
+      lineOptions: {
+        styles: [{ color: 'blue', opacity: 0.7, weight: 5 }]
+      },
+      createMarker: function(i, wp, nWps) {
+        return L.marker(wp.latLng);
+      }
+    }).addTo(map);
 
-    const destLatLng = { lat: e.latlng.lat, lng: e.latlng.lng };
-
-    if (destMarker) map.removeLayer(destMarker);
-    destMarker = L.marker(destLatLng, { icon: L.icon({ iconUrl: 'https://maps.google.com/mapfiles/ms/icons/red-dot.png' }) }).addTo(map)
-      .bindPopup("Destination").openPopup();
-
-    const distance = getDistanceInCm(
-      currentLatLng.lat, currentLatLng.lng,
-      destLatLng.lat, destLatLng.lng
-    );
-
-    updateInfo(currentLatLng, destLatLng, distance);
+    routingControl.on('routesfound', function(e) {
+      const route = e.routes[0];
+      const meters = route.summary.totalDistance;
+      const km = (meters / 1000).toFixed(3);
+      const cm = Math.round(meters * 100);
+      document.getElementById("distance").textContent = `${cm} cm / ${km} km`;
+    });
   });
 </script>
 
