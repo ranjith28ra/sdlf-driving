@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>ESP32 Car GPS Target</title>
+  <title>ESP32 GPS Target Map</title>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
@@ -20,40 +20,57 @@
   </style>
 </head>
 <body>
-  <h3 style="text-align:center;">Click the map to send a GPS target to the ESP32 car</h3>
+  <h3 style="text-align:center;">Tap to set target, your location is shown</h3>
   <div id="map"></div>
 
   <!-- Leaflet JS -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
   <script>
-    // Initialize the map
-    var map = L.map('map').setView([12.9716, 77.5946], 13); // Default to Bangalore
+    let map = L.map('map').setView([20.5937, 78.9629], 5); // Default to India
 
-    // Use OpenStreetMap tiles
+    // Add OpenStreetMap tiles
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: 'Map data © <a href="https://openstreetmap.org">OpenStreetMap</a> contributors',
       maxZoom: 19
     }).addTo(map);
 
-    var marker;
+    // Show current location
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(function(position) {
+        let lat = position.coords.latitude;
+        let lng = position.coords.longitude;
 
-    // On map click
+        // Move map to your location
+        map.setView([lat, lng], 15);
+
+        // Add circle to show current position
+        L.circle([lat, lng], {
+          radius: 10,
+          color: 'blue',
+          fillColor: '#30f',
+          fillOpacity: 0.6
+        }).addTo(map).bindPopup("You are here").openPopup();
+      });
+    }
+
+    // Set target marker
+    let targetMarker;
     map.on('click', function(e) {
-      var lat = e.latlng.lat;
-      var lng = e.latlng.lng;
+      let lat = e.latlng.lat;
+      let lng = e.latlng.lng;
 
-      // Remove old marker
-      if (marker) map.removeLayer(marker);
+      // Remove previous marker
+      if (targetMarker) map.removeLayer(targetMarker);
 
       // Add new marker
-      marker = L.marker([lat, lng]).addTo(map)
+      targetMarker = L.marker([lat, lng]).addTo(map)
         .bindPopup("Target Location:<br>Lat: " + lat.toFixed(6) + "<br>Lng: " + lng.toFixed(6)).openPopup();
 
-      // Send data to ESP32 (replace with your IP or endpoint)
+      // Send to ESP32 (change IP to your ESP32's IP)
       fetch(`http://192.168.4.1/set_target?lat=${lat}&lng=${lng}`)
-        .then(res => console.log("Target sent"))
-        .catch(err => console.error("Error:", err));
+        .then(() => console.log("Target sent"))
+        .catch(err => console.error("Send failed:", err));
     });
   </script>
 </body>
