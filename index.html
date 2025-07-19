@@ -1,77 +1,122 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>ESP32 GPS Target Map</title>
-  <meta charset="utf-8" />
+  <meta charset="UTF-8">
+  <title>Vehicle Tracking Map</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-  <!-- Leaflet CSS -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  />
   <style>
     body, html {
       margin: 0;
       padding: 0;
-      height: 100%;
+      font-family: 'Segoe UI', sans-serif;
     }
     #map {
       height: 100vh;
+      width: 100%;
+    }
+    .info-box {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: rgba(255, 255, 255, 0.95);
+      padding: 15px;
+      border-radius: 10px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.2);
+      z-index: 1000;
+      max-width: 300px;
+      font-size: 14px;
+    }
+    .info-box h4 {
+      margin: 0 0 10px;
+      font-size: 16px;
+      border-bottom: 1px solid #ccc;
+    }
+    .info-box p {
+      margin: 5px 0;
     }
   </style>
 </head>
 <body>
-  <h3 style="text-align:center;">Tap to set target, your location is shown</h3>
-  <div id="map"></div>
 
-  <!-- Leaflet JS -->
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<div id="map"></div>
+<div class="info-box" id="info">
+  <h4>Vehicle Navigation</h4>
+  <p><strong>Current:</strong> <span id="currentLatLng">Loading...</span></p>
+  <p><strong>Destination:</strong> <span id="destLatLng">Not set</span></p>
+  <p><strong>Distance:</strong> <span id="distance">0 cm</span></p>
+</div>
 
-  <script>
-    let map = L.map('map').setView([20.5937, 78.9629], 5); // Default to India
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.gridlayer.googlemutant/Leaflet.GoogleMutant.js"></script>
 
-    // Add OpenStreetMap tiles
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: 'Map data © <a href="https://openstreetmap.org">OpenStreetMap</a> contributors',
-      maxZoom: 19
-    }).addTo(map);
+<script>
+  let map = L.map('map').setView([0, 0], 17);
 
-    // Show current location
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(function(position) {
-        let lat = position.coords.latitude;
-        let lng = position.coords.longitude;
+  // Google Satellite view via plugin
+  L.gridLayer.googleMutant({
+    type: 'satellite' // roadmap | terrain | satellite | hybrid
+  }).addTo(map);
 
-        // Move map to your location
-        map.setView([lat, lng], 15);
+  let currentLatLng = null;
+  let currentMarker = null;
+  let destMarker = null;
 
-        // Add circle to show current position
-        L.circle([lat, lng], {
-          radius: 10,
-          color: 'blue',
-          fillColor: '#30f',
-          fillOpacity: 0.6
-        }).addTo(map).bindPopup("You are here").openPopup();
-      });
-    }
+  function updateInfo(current, dest, distance) {
+    document.getElementById("currentLatLng").innerText = current ? `${current.lat.toFixed(6)}, ${current.lng.toFixed(6)}` : 'Waiting...';
+    document.getElementById("destLatLng").innerText = dest ? `${dest.lat.toFixed(6)}, ${dest.lng.toFixed(6)}` : 'Not set';
+    document.getElementById("distance").innerText = `${distance} cm`;
+  }
 
-    // Set target marker
-    let targetMarker;
-    map.on('click', function(e) {
-      let lat = e.latlng.lat;
-      let lng = e.latlng.lng;
+  function getDistanceInCm(lat1, lon1, lat2, lon2) {
+    const R = 6371000; // meters
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+      Math.sin(dLon / 2) ** 2;
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    const distanceMeters = R * c;
+    return (distanceMeters * 100).toFixed(2); // to cm
+  }
 
-      // Remove previous marker
-      if (targetMarker) map.removeLayer(targetMarker);
+  // Get current GPS location
+  navigator.geolocation.getCurrentPosition((pos) => {
+    currentLatLng = {
+      lat: pos.coords.latitude,
+      lng: pos.coords.longitude
+    };
+    map.setView(currentLatLng, 18);
+    currentMarker = L.marker(currentLatLng).addTo(map)
+      .bindPopup("Vehicle Location").openPopup();
 
-      // Add new marker
-      targetMarker = L.marker([lat, lng]).addTo(map)
-        .bindPopup("Target Location:<br>Lat: " + lat.toFixed(6) + "<br>Lng: " + lng.toFixed(6)).openPopup();
+    updateInfo(currentLatLng, null, 0);
+  }, () => {
+    alert("Location permission denied.");
+  });
 
-      // Send to ESP32 (change IP to your ESP32's IP)
-      fetch(`http://192.168.4.1/set_target?lat=${lat}&lng=${lng}`)
-        .then(() => console.log("Target sent"))
-        .catch(err => console.error("Send failed:", err));
-    });
-  </script>
+  // Tap to set destination
+  map.on("click", (e) => {
+    if (!currentLatLng) return;
+
+    const destLatLng = { lat: e.latlng.lat, lng: e.latlng.lng };
+
+    if (destMarker) map.removeLayer(destMarker);
+    destMarker = L.marker(destLatLng, { icon: L.icon({ iconUrl: 'https://maps.google.com/mapfiles/ms/icons/red-dot.png' }) }).addTo(map)
+      .bindPopup("Destination").openPopup();
+
+    const distance = getDistanceInCm(
+      currentLatLng.lat, currentLatLng.lng,
+      destLatLng.lat, destLatLng.lng
+    );
+
+    updateInfo(currentLatLng, destLatLng, distance);
+  });
+</script>
+
 </body>
 </html>
