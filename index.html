@@ -36,14 +36,32 @@
   <b>Distance:</b> <span id="distance"></span>
 </div>
 
-<!-- JS Libraries -->
+<!-- Leaflet JS -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.min.js"></script>
 
-<script>
-  let map = L.map('map').setView([11.0168, 76.9558], 15); // default
+<!-- Firebase Setup as Module -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-app.js";
+  import { getDatabase, ref, set } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-database.js";
+  import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-analytics.js";
 
-  // Satellite tiles
+  const firebaseConfig = {
+    apiKey: "AIzaSyARVE2wuRXg3_VB9WDtvqlc8BuJV0ZJWFs",
+    authDomain: "map-1e173.firebaseapp.com",
+    databaseURL: "https://map-1e173-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "map-1e173",
+    storageBucket: "map-1e173.firebasestorage.app",
+    messagingSenderId: "446775498224",
+    appId: "1:446775498224:web:ceb2213389e6f6a7dc3935",
+    measurementId: "G-SFRH0MVC5C"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const analytics = getAnalytics(app);
+  const db = getDatabase(app);
+
+  let map = L.map('map').setView([11.0168, 76.9558], 15);
   L.tileLayer('https://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}', {
     subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
     maxZoom: 20,
@@ -76,6 +94,14 @@
 
     const destLatLng = e.latlng;
     document.getElementById("dest").textContent = `${destLatLng.lat.toFixed(5)}, ${destLatLng.lng.toFixed(5)}`;
+
+    // Send to Firebase Realtime Database
+    const destinationRef = ref(db, 'vehicle/destination');
+    set(destinationRef, {
+      lat: destLatLng.lat,
+      lng: destLatLng.lng,
+      timestamp: Date.now()
+    });
 
     if (routingControl) {
       map.removeControl(routingControl);
